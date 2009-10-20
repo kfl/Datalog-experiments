@@ -1,7 +1,8 @@
-mother_children(marge, [bart, lisa, maggie]).
-
 member(X, [X|_]).
 member(X, [_|T]) :- member(X,T).
+
+mother_children(marge, [bart, lisa, maggie]).
+mother_children(mona, [homer, jay]).
 
 mother_child(X, Y) :- mother_children(X, C), member(Y, C).
 
