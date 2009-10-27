@@ -138,7 +138,7 @@ fresh (head, body) =
 
 freshen bound (tc, tb) = (subs sub tc, map (subs sub) tb)
     where vars = variables(tc : tb)
-          sub = [ (v, Var $ nextVar 0 v) | v <- vars, v `notElem` bound]
+          sub = [ (v, Var $ nextVar 0 v) | v <- vars, v `elem` bound]
           nextVar i v = let v' = "_" ++ show i ++ "_" ++ v in
                         if v' `elem` bound then nextVar (i+1) v
                         else v'
@@ -151,14 +151,13 @@ solve :: Program -> Goal -> [SearchTree]
 solve _ [Comp "_report" args] = return $ Solution sol
     where sol = map (\ (Comp "=" [Comp v [], t]) -> (v, t)) args
 solve prog g@(t1 : ts) = return $ Node g trees
-    where treesC = do c <- prog
-                      let (tc, tsc) = freshen (variables g) c
-                      case unify tc t1 of
-                        Just u -> do 
-                          let g' = map (subs u) $ tsc ++ ts
-                          solve prog g' 
-                        Nothing -> []
-          trees = treesC
+    where trees = do c <- prog
+                     let (tc, tsc) = freshen (variables g) c
+                     case unify tc t1 of
+                       Just u -> do 
+                         let g' = map (subs u) $ tsc ++ ts
+                         solve prog g' 
+                       Nothing -> []
 
 {- Failed attempt at using StateT monad transformer 
 
