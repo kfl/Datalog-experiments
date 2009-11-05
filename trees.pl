@@ -1,3 +1,11 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Reference solution for Advanced Programming, E2009, exam question 1.
+% Predicates about trees
+%
+% Author: Andrzej Filinski <andrzej@diku.dk>
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+
 %%%%%%%%%%
 
 % A tree is either a leaf, or a parent node with a list of trees.
