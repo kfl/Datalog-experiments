@@ -1,13 +1,15 @@
+{-
+  Reference solution for Advanced Programming exam question 2 and 3.
+  A basic parser and interpreter for a cut-down version of Prolog
+
+  Author: Ken Friis Larsen <kflarsen@diku.dk>
+-}
 import Text.ParserCombinators.Parsec
 import Data.List (nub)
-import Control.Monad
-import Control.Monad.State
---import Control.Monad.Trans
 
 ----------------------------------------------------------------------
 -- Abstract Syntax Tree
 ----------------------------------------------------------------------
-
 
 type Goal = [Term]
 type Program = Clauses
@@ -24,13 +26,13 @@ type Variable = String
 -- Parser
 ----------------------------------------------------------------------
 
-ctok c = (try(spaces >> char c) >> spaces)
-stok s = (try(spaces >> string s) >> spaces)
+csymb c = (try(spaces >> char c) >> spaces)
+symb s = (try(spaces >> string s) >> spaces)
 
 goal :: Parser Goal
-goal = do stok "?-" 
+goal = do symb "?-" 
           ts <- terms 
-          ctok '.'
+          csymb '.'
           return ts
 
 program :: Parser Program
@@ -39,17 +41,17 @@ program = many clause
 clause :: Parser Clause
 clause = do t <- term
             body <- option []
-                    (stok ":-" >> terms)
-            ctok '.'
+                    (symb ":-" >> terms)
+            csymb '.'
             return (t, body)
 
 term :: Parser Term
-term =  (variable >>= return . Var)
-    <|> literal 
-    <|> list
+term =  variable
+    <|> literal  
+    <|> list     <?> "list term"
 
 terms :: Parser Terms
-terms = sepBy1 term (ctok ',')
+terms = sepBy1 term (csymb ',')
 
 literal :: Parser Term
 literal = do id <- ident    
@@ -57,20 +59,23 @@ literal = do id <- ident
                     (parens terms >>= return . Comp id)
 
 parens :: Parser p -> Parser p
-parens p = between (ctok '(') (ctok ')') p 
+parens p = between (csymb '(') (csymb ')') p 
 
 list :: Parser Term
-list = between (ctok '[') (ctok ']') 
+list = between (csymb '[') (csymb ']') 
                (option emptyListTerm listTerms) 
 
+listTerms :: Parser Term
 listTerms =
     do heads <- terms
        tail <- option emptyListTerm
-                      (ctok '|' >> term)
+                      (csymb '|' >> term)
        return (foldr cons tail heads)
 
+emptyListTerm :: Term
 emptyListTerm = Comp "[]" []
 
+cons :: Term -> Term -> Term
 cons h t = Comp "." [h,t]
 
 ident :: Parser Ident
@@ -81,7 +86,7 @@ ident = (do c <- lower
 variable :: Parser Variable
 variable = (do c <- upper <|> char '_'
                cs <- many (alphaNum <|> char '_')
-               return (c:cs)) <?> "variable"
+               return $ Var (c:cs)) <?> "variable"
                                 
 
 ----------------------------------------------------------------------
@@ -90,18 +95,17 @@ variable = (do c <- upper <|> char '_'
 
 type Unifier = [(Variable, Term)]
 
-occur :: Variable -> Term -> Bool
-occur v (Var x)     = v == x
-occur v (Comp _ ms) = any (occur v) ms
+occursIn :: Variable -> Term -> Bool
+occursIn v (Var x)     = v == x
+occursIn v (Comp _ ms) = any (occursIn v) ms
 
 subs :: Unifier -> Term -> Term
 subs u t@(Var x) = maybe t id (lookup x u)
 subs u (Comp n ts) = Comp n (map (subs u) ts) 
 
 unify :: Term -> Term -> Maybe Unifier
-unify (Var x) (Var y)                  = if x < y then return [(y, Var x)]
-                                         else return [(x, Var y)]
-unify (Var x) t | not(x `occur` t)     = return [(x, t)]
+unify (Var x) (Var y) | x == y         = return []
+unify (Var x) t | not(x `occursIn` t)  = return [(x, t)]
 unify t v@(Var _)                      = unify v t
 unify (Comp m ms) (Comp n ns) | m == n = unifyList ms ns
 unify _ _                              = Nothing
@@ -118,24 +122,6 @@ variables ts = nub $ varsList ts
           vars (Comp _ ts) = varsList ts
           varsList ts = [ v | t <- ts, v <- vars t]
 
-data TreeState = TS {next :: Int}
-
-nextVar x = do st <- get
-               let n = next st
-               put $ st{next = n+1}
-               return $ "_" ++ show n ++ "_" ++ x
-
-freshSub vs =
-    do sub <- mapM freshVar vs
-       return $ sub
-    where freshVar v = do v' <- nextVar v
-                          return $ (v, Var v')
-
-fresh (head, body) = 
-    do let vars = variables(head:body) 
-       sub <- freshSub vars
-       return (subs sub head, map (subs sub) body)
-
 freshen bound (tc, tb) = (subs sub tc, map (subs sub) tb)
     where vars = variables(tc : tb)
           sub = [ (v, Var $ nextVar 0 v) | v <- vars, v `elem` bound]
@@ -148,8 +134,6 @@ data SearchTree = Solution [(Variable, Term)]
                   deriving (Eq, Show, Read)
 
 solve :: Program -> Goal -> [SearchTree]
-solve _ [Comp "_report" args] = return $ Solution sol
-    where sol = map (\ (Comp "=" [Comp v [], t]) -> (v, t)) args
 solve prog g@(t1 : ts) = return $ Node g trees
     where trees = do c <- prog
                      let (tc, tsc) = freshen (variables g) c
@@ -158,36 +142,43 @@ solve prog g@(t1 : ts) = return $ Node g trees
                          let g' = map (subs u) $ tsc ++ ts
                          solve prog g' 
                        Nothing -> []
+solve _ [r] | isReportGoal r =  return $ Solution $ getSolution r
+solve _ _ = []
 
-{- Failed attempt at using StateT monad transformer 
-
--- Back-Tracking-State
-type BTS a = StateT TreeState [] a
-
-solve :: Program -> Goal -> BTS SearchTree
-solve _ [Comp "_report" args] = return $ Solution sol
-    where sol = map (\ (Comp "=" [Comp v [], t]) -> (v, t)) args
-solve prog g@(t1 : ts) =
-    do c <- lift prog
-       (tc, tsc) <- fresh c
-       case unify tc t1 of
-         Just u -> do 
-           let g' = map (subs u) $ tsc ++ ts
-           t <- solve prog g' 
-           return $ Node g' [t]
-         Nothing -> lift []
-
-makeTree prog goal = Node goal trees
-    where trees = evalStateT (solve prog goal) initialState 
-          initialState = TS 0
--}
-
-makeTopTree prog goal = Node goal $ solve prog reportGoal
+makeReportGoal goal = [Comp "_report" reportVars]
     where reportVars = map (\ v -> Comp "=" [Comp v [], Var v]) vars
           vars = variables goal
-          reportGoal = goal ++ [Comp "_report" reportVars]
+
+isReportGoal (Comp "_report" _) = True
+isReportGoal _                  = False
+
+getSolution (Comp "_report" args) = sol
+    where sol = map (\ (Comp "=" [Comp v [], t]) -> (v, t)) args
+
+-- Use the trick of inserting an extra reporting goal
+makeTopTree prog goal = Node goal $ solve prog (goal ++ makeReportGoal goal)
 
 
+----------------------------------------------------------------------
+-- Traveral of Search Trees
+----------------------------------------------------------------------
+
+-- Depth first
+dfs :: SearchTree -> [[(Variable, Term)]]
+dfs (Solution sols) = [sols]
+dfs (Node g st) = [ s | t <- st, s <- dfs t]
+
+-- Breath first
+bfs :: SearchTree -> [[(Variable, Term)]]
+bfs t = trav [t]
+    where trav [] = []
+          trav ((Solution x) : q) = x : trav q
+          trav ((Node _ st)  : q) = trav (q ++ st)
+
+
+----------------------------------------------------------------------
+-- Testing
+----------------------------------------------------------------------
 
 testSibling =
     do Right p <- parseFromFile program "siblings.pl"
@@ -198,14 +189,4 @@ testNats =
     do Right p <- parseFromFile program "nats.pl"
        let Right g = parse goal "<string>" "?- natlist(X)."
        return $ makeTopTree p g
-
--- Depth first
-dfs (Solution sols) = [sols]
-dfs (Node g st) = [ s | t <- st, s <- dfs t]
-
--- Breath first
-bfs t = trav [t]
-    where trav [] = []
-          trav ((Solution x) : q) = x : trav q
-          trav ((Node _ st)  : q) = trav (q ++ st)
 
