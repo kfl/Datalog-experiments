@@ -133,6 +133,7 @@ data SearchTree = Solution [(Variable, Term)]
                 | Node Goal [SearchTree]
                   deriving (Eq, Show, Read)
 
+-- Uses the List monad for backtracking
 solve :: Program -> Goal -> [SearchTree]
 solve prog g@(t1 : ts) = return $ Node g trees
     where trees = do c <- prog
