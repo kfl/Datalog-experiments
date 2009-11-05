@@ -1,11 +1,13 @@
 {-
-  Reference solution for Advanced Programming exam question 2 and 3.
+  Reference solution for Advanced Programming, E2009, exam question 2 and 3.
   A basic parser and interpreter for a cut-down version of Prolog
 
   Author: Ken Friis Larsen <kflarsen@diku.dk>
 -}
+
 import Text.ParserCombinators.Parsec
 import Data.List (nub)
+import Control.Monad(ap,liftM)
 
 ----------------------------------------------------------------------
 -- Abstract Syntax Tree
@@ -95,6 +97,8 @@ variable = (do c <- upper <|> char '_'
 
 type Unifier = [(Variable, Term)]
 
+compose u1 u2 = (map (\(v, t) -> (v, subs u2 t)) u1) ++ u2
+
 occursIn :: Variable -> Term -> Bool
 occursIn v (Var x)     = v == x
 occursIn v (Comp _ ms) = any (occursIn v) ms
@@ -104,7 +108,7 @@ subs u t@(Var x) = maybe t id (lookup x u)
 subs u (Comp n ts) = Comp n (map (subs u) ts) 
 
 unify :: Term -> Term -> Maybe Unifier
-unify (Var x) (Var y) | x == y         = return []
+unify (Var x) (Var y)          = return [(x, Var y)]
 unify (Var x) t | not(x `occursIn` t)  = return [(x, t)]
 unify t v@(Var _)                      = unify v t
 unify (Comp m ms) (Comp n ns) | m == n = unifyList ms ns
@@ -113,7 +117,7 @@ unify _ _                              = Nothing
 unifyList (t : ts) (r : rs) = 
     do u1 <- unify t r
        u2 <- unifyList (map (subs u1) ts) (map (subs u1) rs)
-       return $ map (\(v, t) -> (v, subs u2 t)) u1
+       return $ u1 `compose` u2 
 unifyList [] [] = Just []
 unifyList _ _   = Nothing
 
@@ -144,7 +148,7 @@ solve prog g@(t1 : ts) = return $ Node g trees
                          let g' = map (subs u) $ tsc ++ ts
                          solve prog g' 
                        Nothing -> []
-solve _ _ = []
+--solve _ _ = []
 
 makeReportGoal goal = [Comp "_report" reportVars]
     where reportVars = map (\ v -> Comp "=" [Comp v [], Var v]) vars
@@ -157,7 +161,7 @@ getSolution (Comp "_report" args) = sol
     where sol = map (\ (Comp "=" [Comp v [], t]) -> (v, t)) args
 
 -- Use the trick of inserting an extra reporting goal
-makeTopTree prog goal = Node goal $ solve prog (goal ++ makeReportGoal goal)
+makeReportTree prog goal = Node goal $ solve prog (goal ++ makeReportGoal goal)
 
 
 ----------------------------------------------------------------------
@@ -181,13 +185,18 @@ bfs t = trav [t]
 -- Testing
 ----------------------------------------------------------------------
 
-testSibling =
-    do Right p <- parseFromFile program "siblings.pl"
-       let Right g = parse goal "<string>" "?- sibling(homer, X)."
-       return $ makeTopTree p g
+test filename goalString search =
+    do Right p <- parseFromFile program filename
+       let Right g = parse goal "<string>" goalString
+       let t = makeReportTree p g
+       return $ search t
 
-testNats =
-    do Right p <- parseFromFile program "nats.pl"
-       let Right g = parse goal "<string>" "?- natlist(X)."
-       return $ makeTopTree p g
+siblings = test "siblings.pl" "?- sibling(homer, X)."
+siblingsDFS = siblings dfs
+siblingsBFS = siblings bfs
+
+
+nats = test "nats.pl" "?- natlist(X)."
+natsDFS = liftM (take 10) $ nats dfs
+natsBFS = liftM (take 10) $ nats bfs
 
