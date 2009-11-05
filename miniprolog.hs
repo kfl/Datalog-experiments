@@ -83,7 +83,7 @@ ident = (do c <- lower
             cs <- many (alphaNum <|> char '_')
             return (c:cs)) <?> "identifier"
 
-variable :: Parser Variable
+variable :: Parser Term
 variable = (do c <- upper <|> char '_'
                cs <- many (alphaNum <|> char '_')
                return $ Var (c:cs)) <?> "variable"
@@ -113,7 +113,7 @@ unify _ _                              = Nothing
 unifyList (t : ts) (r : rs) = 
     do u1 <- unify t r
        u2 <- unifyList (map (subs u1) ts) (map (subs u1) rs)
-       return $ u1 ++ u2
+       return $ map (\(v, t) -> (v, subs u2 t)) u1
 unifyList [] [] = Just []
 unifyList _ _   = Nothing
 
@@ -135,6 +135,7 @@ data SearchTree = Solution [(Variable, Term)]
 
 -- Uses the List monad for backtracking
 solve :: Program -> Goal -> [SearchTree]
+solve _ [r] | isReportGoal r =  return $ Solution $ getSolution r
 solve prog g@(t1 : ts) = return $ Node g trees
     where trees = do c <- prog
                      let (tc, tsc) = freshen (variables g) c
@@ -143,7 +144,6 @@ solve prog g@(t1 : ts) = return $ Node g trees
                          let g' = map (subs u) $ tsc ++ ts
                          solve prog g' 
                        Nothing -> []
-solve _ [r] | isReportGoal r =  return $ Solution $ getSolution r
 solve _ _ = []
 
 makeReportGoal goal = [Comp "_report" reportVars]
