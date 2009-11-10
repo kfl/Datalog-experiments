@@ -108,7 +108,7 @@ subs u t@(Var x) = maybe t id (lookup x u)
 subs u (Comp n ts) = Comp n (map (subs u) ts) 
 
 unify :: Term -> Term -> Maybe Unifier
-unify (Var x) (Var y)          = return [(x, Var y)]
+unify (Var x) (Var y) | x == y         = return []
 unify (Var x) t | not(x `occursIn` t)  = return [(x, t)]
 unify t v@(Var _)                      = unify v t
 unify (Comp m ms) (Comp n ns) | m == n = unifyList ms ns
