@@ -107,10 +107,12 @@ compose u1 u2 = (map (\(v, t) -> (v, subs u2 t)) u1) ++ u2
 occursIn :: Variable -> Term -> Bool
 occursIn v (Var x)     = v == x
 occursIn v (Comp _ ms) = any (occursIn v) ms
+occursIn v (Val _)     = False
 
 subs :: Unifier -> Term -> Term
-subs u t@(Var x) = maybe t id (lookup x u)
+subs u t@(Var x)   = maybe t id (lookup x u)
 subs u (Comp n ts) = Comp n (map (subs u) ts) 
+subs u t@(Val _)   = t
 
 unify :: Term -> Term -> Maybe Unifier
 unify (Var x) (Var y) | x == y         = return []
@@ -129,6 +131,7 @@ unifyList _ _   = Nothing
 variables ts = nub $ varsList ts
     where vars (Var x) = [x]
           vars (Comp _ ts) = varsList ts
+          vars (Val _) = []
           varsList ts = [ v | t <- ts, v <- vars t]
 
 freshen bound (tc, tb) = (subs sub tc, map (subs sub) tb)
@@ -138,6 +141,24 @@ freshen bound (tc, tb) = (subs sub tc, map (subs sub) tb)
                         if v' `elem` bound then nextVar (i+1) v
                         else v'
 
+-- | Evaluate a grounded arithmetic term. That is, a term without variables
+eval :: Term -> Int
+eval (Var _) = error "Non-instantiated arithmetic term"
+eval (Val n) = n
+eval (Comp "plus" [t1, t2]) = 
+  let n1 = eval t1 
+      n2 = eval t2
+  in n1 + n2
+
+
+evalIs :: Term -> Unifier
+evalIs (Comp "is" [Var x, t]) = [(x, Val $! eval t)] 
+
+
+normalizeGoal (t1@(Comp "is" _) : rest) = Just$ map (subs $ evalIs t1) rest 
+normaliseGoal _ = Nothing
+  
+
 data SearchTree = Solution [(Variable, Term)]
                 | Node Goal [SearchTree]
                   deriving (Eq, Show, Read)
@@ -146,13 +167,16 @@ data SearchTree = Solution [(Variable, Term)]
 solve :: Program -> Goal -> [SearchTree]
 solve _ [r] | isReportGoal r =  return $ Solution $ getSolution r
 solve prog g@(t1 : ts) = return $ Node g trees
-    where trees = do c <- prog
-                     let (tc, tsc) = freshen (variables g) c
-                     case unify tc t1 of
-                       Just u -> do 
-                         let g' = map (subs u) $ tsc ++ ts
-                         solve prog g' 
-                       Nothing -> []
+    where trees = 
+            case normalizeGoal g of
+              Just ng -> solve prog ng
+              Nothing -> do c <- prog
+                            let (tc, tsc) = freshen (variables g) c
+                            case unify tc t1 of
+                              Just u -> do 
+                                let g' = map (subs u) $ tsc ++ ts
+                                solve prog g' 
+                              Nothing -> []
 --solve _ _ = []
 
 makeReportGoal goal = [Comp "_report" reportVars]
