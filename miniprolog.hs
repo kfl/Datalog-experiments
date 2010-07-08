@@ -157,10 +157,10 @@ evalIs (Comp "is" [Var x, t]) = [(x, Val $! eval t)]
 evalCond :: Term -> Bool
 evalCond (Comp "lt" [t1, t2]) = eval t1 < eval t2
 
-
+normalizeGoal :: Goal -> Maybe Goal
 normalizeGoal (t1@(Comp "is" _) : rest) = Just$ map (subs $ evalIs t1) rest 
 normalizeGoal (t1@(Comp "lt" _) : rest) = if evalCond t1 then Just rest else Just []
-normaliseGoal _ = Nothing
+normalizeGoal _ = Nothing
   
 
 data SearchTree = Solution [(Variable, Term)]
