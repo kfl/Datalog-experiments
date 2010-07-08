@@ -154,8 +154,12 @@ eval (Comp "plus" [t1, t2]) =
 evalIs :: Term -> Unifier
 evalIs (Comp "is" [Var x, t]) = [(x, Val $! eval t)] 
 
+evalCond :: Term -> Bool
+evalCond (Comp "lt" [t1, t2]) = eval t1 < eval t2
+
 
 normalizeGoal (t1@(Comp "is" _) : rest) = Just$ map (subs $ evalIs t1) rest 
+normalizeGoal (t1@(Comp "lt" _) : rest) = if evalCond t1 then Just rest else Just []
 normaliseGoal _ = Nothing
   
 
@@ -169,6 +173,7 @@ solve _ [r] | isReportGoal r =  return $ Solution $ getSolution r
 solve prog g@(t1 : ts) = return $ Node g trees
     where trees = 
             case normalizeGoal g of
+              Just [] -> []
               Just ng -> solve prog ng
               Nothing -> do c <- prog
                             let (tc, tsc) = freshen (variables g) c
