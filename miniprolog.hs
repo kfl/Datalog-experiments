@@ -18,6 +18,7 @@ type Program = Clauses
 type Clauses = [Clause]
 type Clause = (Term, Terms) -- head and body
 data Term = Var Variable
+          | Val Int
           | Comp Ident [Term]
             deriving (Eq, Show, Read)
 type Terms = [Term]
@@ -50,7 +51,8 @@ clause = do t <- term
 term :: Parser Term
 term =  variable
     <|> literal  
-    <|> list     <?> "list term"
+    <|> (list     <?> "list term")
+    <|> intval
 
 terms :: Parser Terms
 terms = sepBy1 term (csymb ',')
@@ -59,7 +61,7 @@ literal :: Parser Term
 literal = do id <- ident    
              option (Comp id [])
                     (parens terms >>= return . Comp id)
-
+          
 parens :: Parser p -> Parser p
 parens p = between (csymb '(') (csymb ')') p 
 
@@ -90,6 +92,9 @@ variable = (do c <- upper <|> char '_'
                cs <- many (alphaNum <|> char '_')
                return $ Var (c:cs)) <?> "variable"
                                 
+intval :: Parser Term
+intval = (do digits <- many1 digit 
+             return $ Val $ read digits) <?> "integer"
 
 ----------------------------------------------------------------------
 -- Interpreter
