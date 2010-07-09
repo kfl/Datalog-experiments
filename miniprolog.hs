@@ -33,8 +33,8 @@ csymb c = (try(spaces >> char c) >> spaces)
 symb s = (try(spaces >> string s) >> spaces)
 
 goal :: Parser Goal
-goal = do symb "?-" 
-          ts <- terms 
+goal = do symb "?-"
+          ts <- terms
           csymb '.'
           return ts
 
@@ -50,7 +50,7 @@ clause = do t <- term
 
 term :: Parser Term
 term =  variable
-    <|> literal  
+    <|> literal
     <|> (list     <?> "list term")
     <|> intval
 
@@ -58,16 +58,16 @@ terms :: Parser Terms
 terms = sepBy1 term (csymb ',')
 
 literal :: Parser Term
-literal = do id <- ident    
+literal = do id <- ident
              option (Comp id [])
                     (parens terms >>= return . Comp id)
-          
+
 parens :: Parser p -> Parser p
-parens p = between (csymb '(') (csymb ')') p 
+parens p = between (csymb '(') (csymb ')') p
 
 list :: Parser Term
-list = between (csymb '[') (csymb ']') 
-               (option emptyListTerm listTerms) 
+list = between (csymb '[') (csymb ']')
+               (option emptyListTerm listTerms)
 
 listTerms :: Parser Term
 listTerms =
@@ -91,9 +91,9 @@ variable :: Parser Term
 variable = (do c <- upper <|> char '_'
                cs <- many (alphaNum <|> char '_')
                return $ Var (c:cs)) <?> "variable"
-                                
+
 intval :: Parser Term
-intval = (do digits <- many1 digit 
+intval = (do digits <- many1 digit
              return $ Val $ read digits) <?> "integer"
 
 ----------------------------------------------------------------------
@@ -111,7 +111,7 @@ occursIn v (Val _)     = False
 
 subs :: Unifier -> Term -> Term
 subs u t@(Var x)   = maybe t id (lookup x u)
-subs u (Comp n ts) = Comp n (map (subs u) ts) 
+subs u (Comp n ts) = Comp n (map (subs u) ts)
 subs u t@(Val _)   = t
 
 unify :: Term -> Term -> Maybe Unifier
@@ -121,10 +121,10 @@ unify t v@(Var _)                      = unify v t
 unify (Comp m ms) (Comp n ns) | m == n = unifyList ms ns
 unify _ _                              = Nothing
 
-unifyList (t : ts) (r : rs) = 
+unifyList (t : ts) (r : rs) =
     do u1 <- unify t r
        u2 <- unifyList (map (subs u1) ts) (map (subs u1) rs)
-       return $ u1 `compose` u2 
+       return $ u1 `compose` u2
 unifyList [] [] = Just []
 unifyList _ _   = Nothing
 
@@ -145,23 +145,23 @@ freshen bound (tc, tb) = (subs sub tc, map (subs sub) tb)
 eval :: Term -> Int
 eval (Var _) = error "Non-instantiated arithmetic term"
 eval (Val n) = n
-eval (Comp "plus" [t1, t2]) = 
-  let n1 = eval t1 
+eval (Comp "plus" [t1, t2]) =
+  let n1 = eval t1
       n2 = eval t2
   in n1 + n2
 
 
 evalIs :: Term -> Unifier
-evalIs (Comp "is" [Var x, t]) = [(x, Val $! eval t)] 
+evalIs (Comp "is" [Var x, t]) = [(x, Val $! eval t)]
 
 evalCond :: Term -> Bool
 evalCond (Comp "lt" [t1, t2]) = eval t1 < eval t2
 
 normalizeGoal :: Goal -> Maybe Goal
-normalizeGoal (t1@(Comp "is" _) : rest) = Just$ map (subs $ evalIs t1) rest 
+normalizeGoal (t1@(Comp "is" _) : rest) = Just$ map (subs $ evalIs t1) rest
 normalizeGoal (t1@(Comp "lt" _) : rest) = if evalCond t1 then Just rest else Just []
 normalizeGoal _ = Nothing
-  
+
 
 data SearchTree = Solution [(Variable, Term)]
                 | Node Goal [SearchTree]
@@ -171,16 +171,16 @@ data SearchTree = Solution [(Variable, Term)]
 solve :: Program -> Goal -> [SearchTree]
 solve _ [r] | isReportGoal r =  return $ Solution $ getSolution r
 solve prog g@(t1 : ts) = return $ Node g trees
-    where trees = 
+    where trees =
             case normalizeGoal g of
               Just [] -> []
               Just ng -> solve prog ng
               Nothing -> do c <- prog
                             let (tc, tsc) = freshen (variables g) c
                             case unify tc t1 of
-                              Just u -> do 
+                              Just u -> do
                                 let g' = map (subs u) $ tsc ++ ts
-                                solve prog g' 
+                                solve prog g'
                               Nothing -> []
 --solve _ _ = []
 
