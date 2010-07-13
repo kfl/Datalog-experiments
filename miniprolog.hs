@@ -28,9 +28,14 @@ type Variable = String
 ----------------------------------------------------------------------
 -- Parser
 ----------------------------------------------------------------------
+comment = do char '%' 
+             manyTill anyChar (try newline)
+             return ()
+          
+spacesOrComments = skipMany ((space >> return()) <|> comment)
 
-csymb c = (try(spaces >> char c) >> spaces)
-symb s = (try(spaces >> string s) >> spaces)
+csymb c = (try(spacesOrComments >> char c) >> spacesOrComments)
+symb s = (try(spacesOrComments >> string s) >> spacesOrComments)
 
 goal :: Parser Goal
 goal = do symb "?-"
@@ -39,7 +44,7 @@ goal = do symb "?-"
           return ts
 
 program :: Parser Program
-program = many clause
+program = spacesOrComments >> many1 clause
 
 clause :: Parser Clause
 clause = do t <- term
@@ -224,6 +229,13 @@ test filename goalString search =
        let Right g = parse goal "<string>" goalString
        let t = makeReportTree p g
        return $ search t
+
+tree filename goalString =
+    do Right p <- parseFromFile program filename
+       let Right g = parse goal "<string>" goalString
+       let t = makeReportTree p g
+       return $ t
+
 
 siblings = test "siblings.pl" "?- sibling(homer, X)."
 siblingsDFS = siblings dfs
