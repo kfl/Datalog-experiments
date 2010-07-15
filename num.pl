@@ -3,8 +3,10 @@
 max(X,Y,X) :- lt(Y,X).
 max(X,Y,Y) :- lt(X,Y).
 
+add(X,Y) : plus(X,Y).
+
 listlen([],0).
-listlen([_|T], N) :- listlen(T,X), is(N,plus(X,1)).
+listlen([_|T], N) :- listlen(T,X), is(N,add(X,1)).
 
 smallNums([], _).
 smallNums([H | T], N) :- lt(H,N), smallNums(T,N).

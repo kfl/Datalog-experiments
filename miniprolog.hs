@@ -1,5 +1,4 @@
 {-
-  Reference solution for Advanced Programming, E2009, exam question 2 and 3.
   A basic parser and interpreter for a cut-down version of Prolog
 
   Author: Ken Friis Larsen <kflarsen@diku.dk>
@@ -14,9 +13,11 @@ import Control.Monad(ap,liftM)
 ----------------------------------------------------------------------
 
 type Goal = [Term]
-type Program = Clauses
+type Program = (Clauses, Funcs)
 type Clauses = [Clause]
 type Clause = (Term, Terms) -- head and body
+type Func = (Ident, ([Variable], Term)) -- name and (arguments and body)
+type Funcs = [Func]
 data Term = Var Variable
           | Val Int
           | Comp Ident [Term]
@@ -44,7 +45,16 @@ goal = do symb "?-"
           return ts
 
 program :: Parser Program
-program = spacesOrComments >> many1 clause
+--program = spacesOrComments >> many1 clause
+program = do spacesOrComments
+             mixed <- many1 clauseOrFunction
+             return ([ c | Left c <- mixed], [ f | Right f <- mixed]) 
+
+
+
+clauseOrFunction :: Parser (Either Clause Func)
+clauseOrFunction =  (try clause >>= return . Left)
+                <|> (try function >>= return . Right)
 
 clause :: Parser Clause
 clause = do t <- term
@@ -52,9 +62,16 @@ clause = do t <- term
                     (symb ":-" >> terms)
             csymb '.'
             return (t, body)
+            
+function :: Parser Func
+function = do name <- ident
+              args <- parens $ sepBy1 variable (csymb ',')
+              body <- csymb ':' >> term
+              csymb '.'
+              return (name, (args, body))
 
 term :: Parser Term
-term =  variable
+term =  (variable >>= return . Var)
     <|> literal
     <|> (list     <?> "list term")
     <|> intval
@@ -92,10 +109,10 @@ ident = (do c <- lower
             cs <- many (alphaNum <|> char '_')
             return (c:cs)) <?> "identifier"
 
-variable :: Parser Term
+variable :: Parser String
 variable = (do c <- upper <|> char '_'
                cs <- many (alphaNum <|> char '_')
-               return $ Var (c:cs)) <?> "variable"
+               return (c:cs)) <?> "variable"
 
 intval :: Parser Term
 intval = (do digits <- many1 digit
@@ -147,25 +164,27 @@ freshen bound (tc, tb) = (subs sub tc, map (subs sub) tb)
                         else v'
 
 -- | Evaluate a grounded arithmetic term. That is, a term without variables
-eval :: Term -> Int
-eval (Var _) = error "Non-instantiated arithmetic term"
-eval (Val n) = n
-eval (Comp "plus" [t1, t2]) =
-  let n1 = eval t1
-      n2 = eval t2
+eval :: Program -> Term -> Int
+eval prog (Var _) = error "Non-instantiated arithmetic term"
+eval prog (Val n) = n
+eval prog (Comp "plus" [t1, t2]) =
+  let n1 = eval prog t1
+      n2 = eval prog t2
   in n1 + n2
+eval prog@(_, functions) (Comp f args) | Just (vars, body) <- lookup f functions = 
+  eval prog (subs (zip vars args) body)
 
 
-evalIs :: Term -> Unifier
-evalIs (Comp "is" [Var x, t]) = [(x, Val $! eval t)]
+evalIs :: Program -> Term -> Unifier
+evalIs prog (Comp "is" [Var x, t]) = [(x, Val $! eval prog t)]
 
-evalCond :: Term -> Bool
-evalCond (Comp "lt" [t1, t2]) = eval t1 < eval t2
+evalCond :: Program -> Term -> Bool
+evalCond prog (Comp "lt" [t1, t2]) = eval prog t1 < eval prog t2
 
-normalizeGoal :: Goal -> Maybe Goal
-normalizeGoal (t1@(Comp "is" _) : rest) = Just$ map (subs $ evalIs t1) rest
-normalizeGoal (t1@(Comp "lt" _) : rest) = if evalCond t1 then Just rest else Just []
-normalizeGoal _ = Nothing
+normalizeGoal :: Program -> Goal -> Maybe Goal
+normalizeGoal prog (t1@(Comp "is" _) : rest) = Just$ map (subs $ evalIs prog t1) rest
+normalizeGoal prog (t1@(Comp "lt" _) : rest) = if evalCond prog t1 then Just rest else Just []
+normalizeGoal _ _ = Nothing
 
 
 data SearchTree = Solution [(Variable, Term)]
@@ -175,12 +194,12 @@ data SearchTree = Solution [(Variable, Term)]
 -- Uses the List monad for backtracking
 solve :: Program -> Goal -> [SearchTree]
 solve _ [r] | isReportGoal r =  return $ Solution $ getSolution r
-solve prog g@(t1 : ts) = return $ Node g trees
+solve prog@(clauses,_) g@(t1 : ts) = return $ Node g trees
     where trees =
-            case normalizeGoal g of
+            case normalizeGoal prog g of
               Just [] -> []
               Just ng -> solve prog ng
-              Nothing -> do c <- prog
+              Nothing -> do c <- clauses
                             let (tc, tsc) = freshen (variables g) c
                             case unify tc t1 of
                               Just u -> do
