@@ -180,20 +180,38 @@ evalIs prog (Comp "is" [Var x, t]) = [(x, Val $! eval prog t)]
 
 evalCond :: Program -> Term -> Bool
 evalCond prog (Comp "lt" [t1, t2]) = eval prog t1 < eval prog t2
+evalCond prog (Comp n args) = if n `elem` conditionComps then error $ "Wrong number of arguments for " ++ n 
+                              else error $ "Unknown operator " ++ n
+
+conditionComps = ["lt"]
+isCond t@(Comp n _) = n `elem` conditionComps
+isCond _ = False
+
+symbolicCond t | isCond t = not $ null $ variables [t]
+symbolicCond _ = False
+
+nonSymbolicCond t = isCond t && (not $ symbolicCond t)
 
 normalizeGoal :: Program -> Goal -> Maybe Goal
 normalizeGoal prog (t1@(Comp "is" _) : rest) = Just$ map (subs $ evalIs prog t1) rest
-normalizeGoal prog (t1@(Comp "lt" _) : rest) = if evalCond prog t1 then Just rest else Just []
+normalizeGoal prog (t1 : rest) | nonSymbolicCond t1 = if evalCond prog t1 then Just rest 
+                                                      else Just []
+normalizeGoal prog g@(t1 : _) | symbolicCond t1 = Just $ n : symb ++ non  
+  where 
+    (n : non, symb) = symbolicPrefix g
+    symbolicPrefix (t : rest) | symbolicCond t = let (non, symb) = symbolicPrefix rest
+                                                 in  (non, t : symb)
+    symbolicPrefix nonsymb = (nonsymb, [])
 normalizeGoal _ _ = Nothing
 
-
-data SearchTree = Solution [(Variable, Term)]
+type Solution = ([(Variable, Term)], Terms)
+data SearchTree = Solution Solution
                 | Node Goal [SearchTree]
                   deriving (Eq, Show, Read)
 
 -- Uses the List monad for backtracking
 solve :: Program -> Goal -> [SearchTree]
-solve _ [r] | isReportGoal r =  return $ Solution $ getSolution r
+solve _ g@(r : conds) | isReportGoal r =  return $ Solution $ getSolution g
 solve prog@(clauses,_) g@(t1 : ts) = return $ Node g trees
     where trees =
             case normalizeGoal prog g of
@@ -215,7 +233,7 @@ makeReportGoal goal = [Comp "_report" reportVars]
 isReportGoal (Comp "_report" _) = True
 isReportGoal _                  = False
 
-getSolution (Comp "_report" args) = sol
+getSolution ((Comp "_report" args) : conds) = (sol, conds)
     where sol = map (\ (Comp "=" [Comp v [], t]) -> (v, t)) args
 
 -- Use the trick of inserting an extra reporting goal
@@ -227,12 +245,12 @@ makeReportTree prog goal = Node goal $ solve prog (goal ++ makeReportGoal goal)
 ----------------------------------------------------------------------
 
 -- Depth first
-dfs :: SearchTree -> [[(Variable, Term)]]
+dfs :: SearchTree -> [Solution]
 dfs (Solution sols) = [sols]
 dfs (Node g st) = [ s | t <- st, s <- dfs t]
 
 -- Breath first
-bfs :: SearchTree -> [[(Variable, Term)]]
+bfs :: SearchTree -> [Solution]
 bfs t = trav [t]
     where trav [] = []
           trav ((Solution x) : q) = x : trav q
