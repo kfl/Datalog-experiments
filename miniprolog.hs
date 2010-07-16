@@ -45,7 +45,6 @@ goal = do symb "?-"
           return ts
 
 program :: Parser Program
---program = spacesOrComments >> many1 clause
 program = do spacesOrComments
              mixed <- many1 clauseOrFunction
              return ([ c | Left c <- mixed], [ f | Right f <- mixed]) 
@@ -141,6 +140,7 @@ unify (Var x) (Var y) | x == y         = return []
 unify (Var x) t | not(x `occursIn` t)  = return [(x, t)]
 unify t v@(Var _)                      = unify v t
 unify (Comp m ms) (Comp n ns) | m == n = unifyList ms ns
+unify (Val x) (Val y) | x == y         = return []
 unify _ _                              = Nothing
 
 unifyList (t : ts) (r : rs) =
