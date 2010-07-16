@@ -2,6 +2,7 @@
 
 max(X,Y,X) :- lt(Y,X).
 max(X,Y,Y) :- lt(X,Y).
+max(X,X,X).
 
 add(X,Y) : plus(X,Y).
 
