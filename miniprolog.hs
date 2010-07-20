@@ -175,8 +175,10 @@ eval prog@(_, functions) (Comp f args) | Just (vars, body) <- lookup f functions
   eval prog (subs (zip vars args) body)
 
 
-evalIs :: Program -> Term -> Unifier
-evalIs prog (Comp "is" [Var x, t]) = [(x, Val $! eval prog t)]
+evalIs :: Program -> Term -> Maybe Unifier
+evalIs prog (Comp "is" [Var x, t]) = return [(x, Val $! eval prog t)]
+evalIs prog (Comp "is" [t1, t2])   = if eval prog t1 == eval prog t2 then return [] 
+                                     else Nothing
 
 evalCond :: Program -> Term -> Bool
 evalCond prog (Comp "lt" [t1, t2]) = eval prog t1 < eval prog t2
@@ -193,7 +195,8 @@ symbolicCond _ = False
 nonSymbolicCond t = isCond t && (not $ symbolicCond t)
 
 normalizeGoal :: Program -> Goal -> Maybe Goal
-normalizeGoal prog (t1@(Comp "is" _) : rest) = Just$ map (subs $ evalIs prog t1) rest
+normalizeGoal prog (t1@(Comp "is" _) : rest) = do u <- evalIs prog t1
+                                                  return $ map (subs u) rest
 normalizeGoal prog (t1 : rest) | nonSymbolicCond t1 = if evalCond prog t1 then Just rest 
                                                       else Just []
 normalizeGoal prog g@(t1 : _) | symbolicCond t1 = Just $ n : symb ++ non  

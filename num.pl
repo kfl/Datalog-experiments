@@ -19,3 +19,5 @@ filterBig([H|T1], T2) :- lt(9, H), filterBig(T1, T2).
 
 id([],[]).
 id([X|T], [X|T2]) :- id(T,T2).
+
+t(X) :- lt(X,5), is(X,3).
