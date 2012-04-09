@@ -1,1 +1,10 @@
 *~
+/Ast.hi
+/Ast.o
+/Interp.hi
+/Interp.o
+/Main.hi
+/Main.o
+/Parser.hi
+/Parser.o
+/miniprolog
