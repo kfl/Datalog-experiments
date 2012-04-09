@@ -7,6 +7,8 @@ module Interp where
 
 import Data.List (nub)
 import Control.Monad(liftM)
+import qualified Text.PrettyPrint as PP
+import Text.PrettyPrint ((<>),(<+>),($$))
 
 import Ast
 import Parser
@@ -65,18 +67,18 @@ eval prog (Comp "plus" [t1, t2]) =
   let n1 = eval prog t1
       n2 = eval prog t2
   in n1 + n2
-eval prog@(_, functions) (Comp f args) | Just (vars, body) <- lookup f functions = 
+eval prog@(_, functions) (Comp f args) | Just (vars, body) <- lookup f functions =
   eval prog (subs (zip vars args) body)
 
 
 evalIs :: Program -> Term -> Maybe Unifier
 evalIs prog (Comp "is" [Var x, t]) = return [(x, Val $! eval prog t)]
-evalIs prog (Comp "is" [t1, t2])   = if eval prog t1 == eval prog t2 then return [] 
+evalIs prog (Comp "is" [t1, t2])   = if eval prog t1 == eval prog t2 then return []
                                      else Nothing
 
 evalCond :: Program -> Term -> Bool
 evalCond prog (Comp "lt" [t1, t2]) = eval prog t1 < eval prog t2
-evalCond prog (Comp n args) = if n `elem` conditionComps then error $ "Wrong number of arguments for " ++ n 
+evalCond prog (Comp n args) = if n `elem` conditionComps then error $ "Wrong number of arguments for " ++ n
                               else error $ "Unknown operator " ++ n
 
 conditionComps = ["lt"]
@@ -91,24 +93,51 @@ nonSymbolicCond t = isCond t && (not $ symbolicCond t)
 normalizeGoal :: Program -> Goal -> Maybe Goal
 normalizeGoal prog (t1@(Comp "is" _) : rest) = do u <- evalIs prog t1
                                                   return $ map (subs u) rest
-normalizeGoal prog (t1 : rest) | nonSymbolicCond t1 = if evalCond prog t1 then Just rest 
+normalizeGoal prog (t1 : rest) | nonSymbolicCond t1 = if evalCond prog t1 then Just rest
                                                       else Just []
-normalizeGoal prog g@(t1 : _) | symbolicCond t1 = Just $ n : symb ++ non  
-  where 
+normalizeGoal prog g@(t1 : _) | symbolicCond t1 = Just $ n : symb ++ non
+  where
     (n : non, symb) = symbolicPrefix g
     symbolicPrefix (t : rest) | symbolicCond t = let (non, symb) = symbolicPrefix rest
                                                  in  (non, t : symb)
     symbolicPrefix nonsymb = (nonsymb, [])
 normalizeGoal _ _ = Nothing
 
-type Solution = ([(Variable, Term)], Terms)
-data SearchTree = Solution Solution
+newtype Solution = Solution ([(Variable, Term)], Terms)
+                 deriving (Eq, Read)
+
+instance Show Solution where
+  show (Solution(bindings, conds)) = PP.render(renderB bindings $$ renderC conds)
+    where
+      renderB bindings = PP.braces $ PP.vcat $ map renderBindings bindings
+
+      renderBindings (var, term) = PP.text var <+> PP.equals <+> renderT term
+
+      renderT (Var v) = PP.text v
+      renderT (Val n) = PP.int n
+      renderT (Comp a []) = PP.text a
+      renderT comp@(Comp f args) =
+        case listTerm comp of
+          Just tt -> PP.brackets $ renderTerms tt
+          Nothing -> PP.text f <> (PP.parens $ renderTerms args)
+
+      renderTerms terms = PP.sep $ PP.punctuate PP.comma $ map renderT terms
+
+      renderC [] = PP.empty
+      renderC conds = PP.text "Conditions:" $$ (PP.nest 4 $ renderTerms conds)
+
+      listTerm (Comp "[]" [])    = return []
+      listTerm (Comp "." [h, t]) = do tt <- listTerm t
+                                      return $ h:tt
+      listTerm _                 = Nothing
+
+data SearchTree = Sol Solution
                 | Node Goal [SearchTree]
                   deriving (Eq, Show, Read)
 
 -- Uses the List monad for backtracking
 solve :: Program -> Goal -> [SearchTree]
-solve _ g@(r : conds) | isReportGoal r =  return $ Solution $ getSolution g
+solve _ g@(r : conds) | isReportGoal r =  return $ Sol $ getSolution g
 solve prog@(clauses,_) g@(t1 : ts) = return $ Node g trees
     where trees =
             case normalizeGoal prog g of
@@ -130,7 +159,7 @@ makeReportGoal goal = [Comp "_report" reportVars]
 isReportGoal (Comp "_report" _) = True
 isReportGoal _                  = False
 
-getSolution ((Comp "_report" args) : conds) = (sol, conds)
+getSolution ((Comp "_report" args) : conds) = Solution (sol, conds)
     where sol = map (\ (Comp "=" [Comp v [], t]) -> (v, t)) args
 
 -- Use the trick of inserting an extra reporting goal
@@ -143,14 +172,14 @@ makeReportTree prog goal = Node goal $ solve prog (goal ++ makeReportGoal goal)
 
 -- Depth first
 dfs :: SearchTree -> [Solution]
-dfs (Solution sols) = [sols]
+dfs (Sol sols) = [sols]
 dfs (Node g st) = [ s | t <- st, s <- dfs t]
 
 -- Breath first
 bfs :: SearchTree -> [Solution]
 bfs t = trav [t]
     where trav [] = []
-          trav ((Solution x) : q) = x : trav q
+          trav ((Sol x) : q) = x : trav q
           trav ((Node _ st)  : q) = trav (q ++ st)
 
 
@@ -179,4 +208,3 @@ siblingsBFS = siblings bfs
 nats = test "nats.pl" "?- natlist(X)."
 natsDFS = liftM (take 10) $ nats dfs
 natsBFS = liftM (take 10) $ nats bfs
-
