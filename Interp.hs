@@ -3,9 +3,10 @@
 
   Author: Ken Friis Larsen <kflarsen@diku.dk>
 -}
+module Interp where
 
 import Data.List (nub)
-import Control.Monad(ap,liftM)
+import Control.Monad(liftM)
 
 import Ast
 import Parser
