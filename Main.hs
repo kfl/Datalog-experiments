@@ -46,4 +46,6 @@ main = do
       Right g = P.goalFromString $ goal opts
       t = I.makeReportTree p g
       solutions = searchF t
-  mapM print solutions
+  case solutions of
+    [] -> print "no solutions"
+    _  -> mapM_ print solutions

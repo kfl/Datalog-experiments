@@ -109,6 +109,7 @@ newtype Solution = Solution ([(Variable, Term)], Terms)
 instance Show Solution where
   show (Solution(bindings, conds)) = PP.render(renderB bindings $$ renderC conds)
     where
+      renderB [] = PP.text "true"
       renderB bindings = PP.braces $ PP.vcat $ map renderBindings bindings
 
       renderBindings (var, term) = PP.text var <+> PP.equals <+> renderT term
